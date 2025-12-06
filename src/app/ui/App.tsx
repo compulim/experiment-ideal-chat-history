@@ -1,6 +1,143 @@
-import { memo } from 'react';
-import ChatApp, { CHAT_MESSAGES } from './ChatApp';
+import { AdaptiveCard, GlobalSettings, HostConfig } from 'adaptivecards';
+import { memo, useCallback, useEffect, useRef, useState, type FormEventHandler, type ReactNode } from 'react';
+import type { Message } from '../types';
+import ChatApp from './ChatApp';
+
+const ADAPTIVE_CARD_JSON = {
+  type: 'AdaptiveCard',
+  version: '1.5',
+
+  body: [
+    {
+      type: 'Input.Text',
+      label: 'Street address'
+    },
+    {
+      type: 'Input.Text',
+      label: 'City'
+    },
+    {
+      type: 'Input.ChoiceSet',
+      label: 'State',
+      choices: [
+        { title: 'California', value: 'CA' },
+        { title: 'Oregon', value: 'OR' },
+        { title: 'Washington', value: 'WA' }
+      ],
+      style: 'compact'
+    }
+  ],
+  actions: [
+    {
+      type: 'Action.Submit',
+      title: 'Submit'
+    }
+  ]
+};
+
+function AddressForm() {
+  const ref = useRef<HTMLFormElement>(null);
+
+  const handleSubmit = useCallback<FormEventHandler<HTMLFormElement>>(event => {
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const adaptiveCard = new AdaptiveCard();
+
+    adaptiveCard.hostConfig = new HostConfig({ containerStyles: { default: { backgroundColor: '#f7f7f7' } } });
+    adaptiveCard.onExecuteAction = () => {
+      ref.current?.closest('form')?.requestSubmit();
+    };
+
+    adaptiveCard.parse(ADAPTIVE_CARD_JSON);
+
+    GlobalSettings.setTabIndexAtCardRoot = false;
+
+    const element = adaptiveCard.render();
+
+    if (element) {
+      const textInput = element.querySelector('.ac-textInput') as HTMLElement | undefined;
+
+      if (textInput) {
+        textInput.dataset['testid'] = 'street address textbox';
+      }
+
+      const pushButton = element.querySelector('.ac-pushButton') as HTMLElement | undefined;
+
+      if (pushButton) {
+        pushButton.dataset['testid'] = 'address form submit button';
+      }
+
+      ref.current?.appendChild(element);
+    }
+  }, [ref]);
+
+  return <form data-testid="address form" ref={ref} onSubmit={handleSubmit} />;
+}
+
+function Attachment({ children }: { children?: ReactNode | undefined }) {
+  return (
+    <div role="group">
+      <div>{children}</div>
+    </div>
+  );
+}
+
+const CHAT_MESSAGES: readonly Message[] = Object.freeze([
+  {
+    // "abstract" can be built using a new "activity abstract middleware". Not sure if we should support React elements or just plain text.
+    abstract: 'Bot said: Hello, World!',
+    children: (
+      <>
+        <p>Hello, World!</p>
+        <p>
+          Click <a href="https://bing.com/">this link</a> for more details.
+        </p>
+      </>
+    ),
+    id: 'a-00001'
+  },
+  {
+    abstract: 'You said: Aloha!',
+    children: <p>Aloha!</p>,
+    id: 'a-00002'
+  },
+  {
+    abstract: 'Bot said: Where should we ship it to? Has an attachment.',
+    children: (
+      <>
+        <p>Where should we ship it to?</p>
+        <Attachment>
+          <AddressForm />
+        </Attachment>
+      </>
+    ),
+    id: 'a-00003'
+  }
+]);
 
 export default memo(function App() {
-  return <ChatApp messages={CHAT_MESSAGES} />;
+  const [messages, setMessages] = useState<readonly Message[]>(() => CHAT_MESSAGES);
+
+  useEffect(() => {
+    window.addEventListener(
+      'addmessage',
+      () => {
+        setMessages(messages =>
+          Object.freeze([
+            ...messages,
+            {
+              abstract: 'Bot said: Thank you.',
+              children: <p>Thank you.</p>,
+              id: 'a-00004'
+            }
+          ])
+        );
+      },
+      { once: true }
+    );
+  }, []);
+
+  return <ChatApp messages={messages} />;
 });

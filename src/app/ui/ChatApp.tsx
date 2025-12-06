@@ -31,7 +31,7 @@ import {
 // 4. We are using focus sentinels to fake roving tab index
 //    - When TAB from outside, all messages except the focused one need to be skipped. This is not trivial.
 //       - To achieve this, we need `onKeyDown` watching incoming event.key === 'Tab', when it happen, momentarily add `inert` attribute to all messages except the focused
-//       - We cannot have `inert` all the time because it intefere with mouse clicks
+//       - We cannot have `inert` all the time because it interfere with mouse clicks
 //       - The `onKeyDown` need to be set outside of chat history, which is not trivial.
 //    - Instead of using singular tabIndex={0}, we remember which message was focused, then the sentinels will directly focus on them.
 //       - This is like roving tab index, but the last focused is remembered in code, than remembered via the singular tabIndex={0}.

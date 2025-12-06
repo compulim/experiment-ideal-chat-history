@@ -601,7 +601,11 @@ const SendBox = memo<{
 
   const handleKeyDown = useCallback<KeyboardEventHandler<HTMLTextAreaElement>>(
     event => {
-      if (event.key === 'ArrowUp' && event.currentTarget.selectionEnd === 0) {
+      if (
+        event.key === 'ArrowUp' &&
+        event.currentTarget.selectionStart === 0 &&
+        event.currentTarget.selectionEnd === 0
+      ) {
         onLeaveRef.current?.('arrow up');
       }
     },

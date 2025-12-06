@@ -1,5 +1,6 @@
 import { memo } from 'react';
+import ChatApp, { CHAT_MESSAGES } from './ChatApp';
 
 export default memo(function App() {
-  return <h1>Hello, World!</h1>;
+  return <ChatApp messages={CHAT_MESSAGES} />;
 });

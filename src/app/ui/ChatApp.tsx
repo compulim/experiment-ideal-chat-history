@@ -36,8 +36,8 @@ import type { Message } from '../types';
 //       - Roving tab index use `tabIndex={0}` to be the cursor of what is last focused. To restore focus, it requires zero JS code.
 //       - While press SHIFT-TAB send the focus from send box to the chat history, we will need to skip form controls in the message body and focus directly on the message itself. Roving tab index doesn't work in such scenario.
 //       - We borrowed the concept of roving tab index but using focus sentinels to restore the focus. Focus sentinels requires focus redirection, which is expensive in UX sense.
-//    - Try to put event handler at the root element of message.
-//       - This will centralize the logic. As a result, simplify some code and makes things easier to debug.
+//    - Capture events at the root element of message.
+//       - This will centralize the event-driven logic. As a result, simplify some code and makes things easier to debug.
 
 // Notes:
 // 1. We cannot use `inert` because it would block mouse clicks as well as TAB.
@@ -415,18 +415,19 @@ function ChatHistory({
           onLeaveRef.current?.('arrow up');
         }
       } else if (by === 'shift tab' || by === 'tab') {
-        // When tabbing out of chat history, skip all message bodies, so TAB will naturally land on the next focusable.
+        // When SHIFT-TAB or TAB key is pressed to focus out of chat history, skip all message bodies, so TAB will naturally land on the next focusable.
         rootRef.current?.setAttribute('inert', '');
 
         requestAnimationFrame(() => rootRef.current?.removeAttribute('inert'));
       } else {
         // When ESCAPE key is pressed on the message, jump to send box.
+        // If this is not desirable, the content component should call `event.preventDefault()` to prevent this behavior.
         by satisfies 'escape';
 
         onLeaveRef.current?.('escape');
       }
     },
-    [jumpToRelativeMessage, onLeaveRef]
+    [jumpToRelativeMessage, onLeaveRef, rootRef]
   );
 
   useImperativeHandle<ChatHistoryAPI | undefined, ChatHistoryAPI>(ref, () => Object.freeze({ focus }), [focus]);

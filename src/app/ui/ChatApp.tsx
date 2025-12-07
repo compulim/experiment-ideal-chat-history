@@ -112,26 +112,21 @@ function useRefAsState<T>(
   return [ref, setState];
 }
 
-// We have onJumpToNext, onJumpToPrevious, onLeave here, instead of capturing `onKeyDown(ArrowUp/ArrowDown/Tab/Escape)` at chat history.
+// We use onLeave here to indicate how the user left the message.
 // This will make the code simpler. And there are only 1 component to look at when diagnosing key down issues.
-// It will make <ChatMessage> more complex. But the <ChatHistory> become very simple then.
 const ChatMessage = memo<{
   abstract: string;
   children?: ReactNode | undefined;
   messageId: string;
   onFocus: (messageId: string) => void;
-  onJumpToNext: (messageId: string) => void;
-  onJumpToPrevious: (messageId: string) => void;
-  onLeave: (messageId: string, by: 'escape' | 'shift tab' | 'tab') => void;
+  onLeave: (messageId: string, by: 'arrow down' | 'arrow up' | 'escape' | 'shift tab' | 'tab') => void;
   ref: RefObject<ChatMessageAPI | undefined>;
-}>(function ChatMessage({ abstract, children, messageId, onFocus, onJumpToNext, onJumpToPrevious, onLeave, ref }) {
+}>(function ChatMessage({ abstract, children, messageId, onFocus, onLeave, ref }) {
   const bodyId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
   const headerId = useId();
   const messageIdRef = useRefFrom(messageId);
   const onFocusRef = useRefFrom(onFocus);
-  const onJumpToNextRef = useRefFrom(onJumpToNext);
-  const onJumpToPreviousRef = useRefFrom(onJumpToPrevious);
   const onLeaveRef = useRefFrom(onLeave);
   const recentFocusableRef = useRef<Element | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -226,15 +221,15 @@ const ChatMessage = memo<{
       const isTargetingBody = target === body;
 
       switch (event.key) {
-        case 'ArrowUp':
-          // UP ARROW from the message should go to previous message.
-          isTargetingBody && onJumpToPreviousRef.current?.(messageId);
+        case 'ArrowDown':
+          // DOWN ARROW from the message should go to next message.
+          isTargetingBody && onLeaveRef.current?.(messageId, 'arrow down');
 
           break;
 
-        case 'ArrowDown':
-          // DOWN ARROW from the message should go to next message.
-          isTargetingBody && onJumpToNextRef.current?.(messageId);
+        case 'ArrowUp':
+          // UP ARROW from the message should go to previous message.
+          isTargetingBody && onLeaveRef.current?.(messageId, 'arrow up');
 
           break;
 
@@ -319,7 +314,7 @@ function ChatHistory({
   ref
 }: {
   readonly messages: readonly Message[];
-  readonly onLeave: (how: 'down arrow' | 'escape') => void;
+  readonly onLeave: (how: 'arrow down' | 'arrow up' | 'escape') => void;
   readonly ref: RefObject<ChatHistoryAPI | undefined>;
 }) {
   // Message ID is the source-of-truth of the focused message.
@@ -371,10 +366,13 @@ function ChatHistory({
       let nextIndex: number;
 
       if (!~index) {
+        // If the current message is no longer available, focus on the very last message.
         nextIndex = messagesLength - 1;
       } else if (index + relativePosition < 0) {
+        // If there are no previous message to jump to, return -Infinity.
         return -Infinity;
       } else if (index + relativePosition >= messagesLength) {
+        // If there are no next message to jump to, return Infinity.
         return Infinity;
       } else {
         nextIndex = index + relativePosition;
@@ -404,34 +402,31 @@ function ChatHistory({
     [setFocusedMessageIDRef]
   );
 
-  const handleMessageJumpToNext = useCallback(
-    (messageId: string) => {
-      if (jumpToRelativeMessage(messageId, 1) === Infinity) {
-        onLeaveRef.current?.('down arrow');
-      }
-    },
-    [jumpToRelativeMessage, onLeaveRef]
-  );
-
-  const handleMessageJumpToPrevious = useCallback(
-    (messageId: string) => jumpToRelativeMessage(messageId, -1),
-    [jumpToRelativeMessage]
-  );
-
   const handleMessageLeave = useCallback(
-    (_: string, by: 'escape' | 'shift tab' | 'tab') => {
-      if (by === 'shift tab' || by === 'tab') {
-        // When tabbing out of chat history, skip all message bodies so TAB naturally land to the next focusable.
+    (messageId: string, by: 'arrow down' | 'arrow up' | 'escape' | 'shift tab' | 'tab') => {
+      if (by === 'arrow down') {
+        if (jumpToRelativeMessage(messageId, 1) === Infinity) {
+          // If there are no next message to jump to, focus on the send box.
+          onLeaveRef.current?.('arrow down');
+        }
+      } else if (by === 'arrow up') {
+        if (jumpToRelativeMessage(messageId, -1) === -Infinity) {
+          // If there are no previous message to jump to, fire onLeave().
+          onLeaveRef.current?.('arrow up');
+        }
+      } else if (by === 'shift tab' || by === 'tab') {
+        // When tabbing out of chat history, skip all message bodies, so TAB will naturally land on the next focusable.
         rootRef.current?.setAttribute('inert', '');
 
         requestAnimationFrame(() => rootRef.current?.removeAttribute('inert'));
       } else {
         // When ESCAPE key is pressed on the message, jump to send box.
         by satisfies 'escape';
+
         onLeaveRef.current?.('escape');
       }
     },
-    [onLeaveRef]
+    [jumpToRelativeMessage, onLeaveRef]
   );
 
   useImperativeHandle<ChatHistoryAPI | undefined, ChatHistoryAPI>(ref, () => Object.freeze({ focus }), [focus]);
@@ -450,8 +445,6 @@ function ChatHistory({
           key={message.id}
           messageId={message.id}
           onFocus={handleMessageFocus}
-          onJumpToNext={handleMessageJumpToNext}
-          onJumpToPrevious={handleMessageJumpToPrevious}
           onLeave={handleMessageLeave}
           ref={messageAPIMapRef.current.get(message.id)!}
         >
@@ -469,7 +462,7 @@ function ChatHistory({
 }
 
 const SendBox = memo<{
-  readonly onLeave: (how: 'arrow up') => void;
+  readonly onLeave: (by: 'arrow up') => void;
   readonly ref: RefObject<SendBoxAPI | undefined>;
 }>(function SendBox({ onLeave, ref }) {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -513,10 +506,17 @@ const ChatApp = memo<{ messages: readonly Message[] }>(function ChatApp({ messag
   const chatHistoryRef = useRef<ChatHistoryAPI>(undefined);
   const sendBoxRef = useRef<SendBoxAPI>(undefined);
 
-  const handleChatHistoryLeave = useCallback(() => sendBoxRef.current?.focus(), [sendBoxRef]);
+  const handleChatHistoryLeave = useCallback(
+    (by: 'arrow down' | 'arrow up' | 'escape') => {
+      if (by === 'arrow down' || by === 'escape') {
+        sendBoxRef.current?.focus();
+      }
+    },
+    [sendBoxRef]
+  );
   const handleSendBoxLeave = useCallback(
-    (how: 'arrow up') => {
-      if (how === 'arrow up') {
+    (by: 'arrow up') => {
+      if (by === 'arrow up') {
         chatHistoryRef.current?.focus({ which: 'last message' });
       }
     },

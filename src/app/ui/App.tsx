@@ -49,8 +49,16 @@ export default memo(function App() {
 
   useEffect(() => {
     window.addEventListener(
+      'keydown',
+      event => event.altKey && event.code === 'KeyA' && window.dispatchEvent(new CustomEvent('addmessage'))
+    );
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener(
       'addmessage',
       () => {
+        console.log('addmessage');
         setMessages(messages =>
           Object.freeze([
             ...messages,

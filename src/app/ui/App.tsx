@@ -4,11 +4,7 @@ import AddressForm from './AddressForm';
 import ChatApp from './ChatApp';
 
 function Attachment({ children }: { children?: ReactNode | undefined }) {
-  return (
-    <div role="group">
-      <div>{children}</div>
-    </div>
-  );
+  return <div className="attachment">{children}</div>;
 }
 
 const CHAT_MESSAGES: readonly Message[] = Object.freeze([

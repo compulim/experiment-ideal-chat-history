@@ -1,10 +1,10 @@
 /* eslint-disable complexity */
-import classNames from 'classnames';
 import { useRefFrom } from 'use-ref-from';
 import {
   type FormEventHandler,
   type KeyboardEventHandler,
   type MouseEventHandler,
+  type ReactEventHandler,
   type ReactNode,
   type RefObject,
   type SetStateAction,
@@ -17,6 +17,27 @@ import {
   useState
 } from 'react';
 import type { Message } from '../types';
+
+// Good things that I think it's neat and good to keep:
+// - Ideas
+//    - Every component has imperative ref of `focus()` or `focus({ restoreFocus: boolean })`, calling them will focus on the component.
+//       - The component has its own thinking to focus on which subcomponent.
+//       - While `HTMLElement.focus()` maybe good enough, to focus on subcomponent, either the caller need to know what to be focused, or the callee need to redirect focus from root.
+//    - Every component has `onLeave(reason)` to tell whey they are becoming unfocused, the `reason` could be `"tab"`, `"shift tab"`, `"arrow up"`, etc.
+//       - The native `onBlur()` isn't working all the time because it could be `onBlur()` for a split second before `onFocus()` on another subcomponent.
+//       - The guess work around "why is the component blurred" is clearer with `onLeave()`.
+//    - Look at `onKeyDown[event.key === 'Tab']` to see how focus changes primarily. Use `onFocus()` as auxiliary.
+//       - `onKeyDown` is fired before `onFocus`, we can have more controls. Says, we can set `inert` attribute during `onKeyDown` to skip some elements.
+// - Techniques
+//    - Skip focusing on some content, `onKeyDown[event.key === 'Tab']` temporarily apply `inert` attribute and remove the attribute shortly afterwards (`requestAnimationFrame` works).
+//       - Don't apply `inert` permanently as it would disable mouse clicks on elements.
+// - Opinions
+//    - Roving tab index is great for memorizing recent focused element, but it isn't working for us.
+//       - Roving tab index use `tabIndex={0}` to be the cursor of what is last focused. To restore focus, it requires zero JS code.
+//       - While press SHIFT-TAB send the focus from send box to the chat history, we will need to skip form controls in the message body and focus directly on the message itself. Roving tab index doesn't work in such scenario.
+//       - We borrowed the concept of roving tab index but using focus sentinels to restore the focus. Focus sentinels requires focus redirection, which is expensive in UX sense.
+//    - Try to put event handler at the root element of message.
+//       - This will centralize the logic. As a result, simplify some code and makes things easier to debug.
 
 // Notes:
 // 1. We cannot use `inert` because it would block mouse clicks as well as TAB.
@@ -35,9 +56,10 @@ import type { Message } from '../types';
 //       - The `onKeyDown` need to be set outside of chat history, which is not trivial.
 //    - Instead of using singular tabIndex={0}, we remember which message was focused, then the sentinels will directly focus on them.
 //       - This is like roving tab index, but the last focused is remembered in code, than remembered via the singular tabIndex={0}.
+// 5. NVDA will announce "clickable" when the element has a `onClick` handler, in other words, it don't care if it has `tabIndex={0/-1}` or not.
 
 type ChatHistoryAPI = {
-  readonly focus: (init: { which: 'last message' }) => void;
+  readonly focus: (init: { which?: 'last message' | undefined }) => void;
 };
 
 type ChatMessageAPI = {
@@ -114,11 +136,12 @@ const ChatMessage = memo<{
   const recentFocusableRef = useRef<Element | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const focus = useCallback(
-    ({ restoreFocus }: { restoreFocus: boolean }) => {
+  const focus = useCallback<ChatMessageAPI['focus']>(
+    ({ restoreFocus }) => {
       const { current: body } = bodyRef;
       const { current: recentFocusable } = recentFocusableRef;
 
+      // If the caller request to restore focus, restore the focus back to the focusable if the "recent focusable" is still part of the message.
       if (
         body &&
         restoreFocus &&
@@ -135,14 +158,17 @@ const ChatMessage = memo<{
     [bodyRef, recentFocusableRef]
   );
 
-  // This is for screen reader only. The header should be visually sized 0px x 0px and it should not be clickable by mouse or keyboard.
-  // Windows Narrator quirks: In scan mode, press H key to put virtual cursor on the header, then press ENTER key.
-  //                          It should fire header.onClick. However, fire root.onClick instead and never header.onClick.
-  //                          We are not sure why it happens this way, even we set <header tabIndex={0}>, it still fire root.onClick.
+  // This is for screen reader only. The header should be invisible and not be clickable by mouse or keyboard.
+  // Narrator/NVDA: Press H key to move the virtual cursor to focus on the header, press ENTER.
+  //                Screen readers will not fire onClick() when press ENTER on a form control, instead, it will fire onFocus() instead.
   const handleHeaderClick = useCallback<MouseEventHandler<HTMLHeadingElement>>(
     event => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
       // Don't leak the event to root.onClick.
-      event.stopPropagation();
+      event.preventDefault();
 
       focus({ restoreFocus: false });
     },
@@ -150,23 +176,33 @@ const ChatMessage = memo<{
   );
 
   // This is for mouse click and Windows Narrator scan mode click.
-  const handleRootClick = useCallback<MouseEventHandler<HTMLDivElement>>(() => {
-    // Windows Narrator: When pressing "H" key to focus on the header and press ENTER, it fire <ChatMessage.root>.onClick, instead of <ChatMessage.header>.onClick.
-    //                   Thus, we need to focusBody() instead of focusRoot().
-    const { activeElement } = document;
-    const { current: body } = bodyRef;
+  // NVDA: Scan mode, virtual cursor on the text content, press ENTER.
+  // Windows Narrator: Will not fire onClick() when press ENTER on message content (not header, not form controls.)
+  const handleRootClick = useCallback<MouseEventHandler<HTMLDivElement>>(
+    event => {
+      if (event.defaultPrevented) {
+        return;
+      }
 
-    // If the body is already focused, for example, the <input> inside the body is focused.
-    // We should not send the focus back to the body as it would blur <input>.
-    if (!(activeElement === body || body?.contains(activeElement))) {
-      focus({ restoreFocus: false });
-    }
-  }, [bodyRef, focus]);
+      // Windows Narrator: When pressing "H" key to focus on the header and press ENTER, it fire <ChatMessage.root>.onClick, instead of <ChatMessage.header>.onClick.
+      //                   Thus, we need to focusBody() instead of focusRoot().
+      const { activeElement } = document;
+      const { current: body } = bodyRef;
 
-  // Notify chat history this message is being focused. So focus sentinels will land on this message later.
-  // This is actually roving tab index without using tabIndex={0}.
-  const handleRootFocus = useCallback(() => {
-    // Windows Narrator: when pressing H key to jump across messages, it automatically fire <ChatMessage.root>.onFocus automatically.
+      // If the body is already focused, for example, the <input> inside the body is focused.
+      // We should not send the focus back to the body as it would blur <input>.
+      if (!(activeElement === body || body?.contains(activeElement))) {
+        focus({ restoreFocus: false });
+      }
+    },
+    [bodyRef, focus]
+  );
+
+  // Notify chat history this message is being focused. So focus sentinels on chat history will land on this message later.
+  // This is for roving tab index without using tabIndex={0}.
+  const handleRootFocus = useCallback<ReactEventHandler<HTMLElement>>(() => {
+    // Windows Narrator: When pressing H key to jump across messages, by default, Windows Narrator automatically fire `ChatMessage.root.onFocus` event handler.
+    //                   The default settings has "Sync the Narrator cursor and system focus" enabled.
     onFocusRef.current?.(messageIdRef.current);
 
     const { activeElement } = document;
@@ -191,17 +227,20 @@ const ChatMessage = memo<{
 
       switch (event.key) {
         case 'ArrowUp':
+          // UP ARROW from the message should go to previous message.
           isTargetingBody && onJumpToPreviousRef.current?.(messageId);
 
           break;
 
         case 'ArrowDown':
+          // DOWN ARROW from the message should go to next message.
           isTargetingBody && onJumpToNextRef.current?.(messageId);
 
           break;
 
         case 'Enter':
           if (isTargetingBody) {
+            // ENTER from the body should focus on form control, if available.
             getFocusableChildren(body)[0]?.focus();
           }
 
@@ -209,8 +248,10 @@ const ChatMessage = memo<{
 
         case 'Escape':
           if (isTargetingBody) {
+            // ESCAPE from the message should leave the message.
             onLeaveRef.current?.(messageId, 'escape');
           } else {
+            // ESCAPE from form control should focus on the message itself.
             focus({ restoreFocus: false });
           }
 
@@ -219,10 +260,13 @@ const ChatMessage = memo<{
         case 'Tab':
           if (body && target) {
             if (event.shiftKey && target === body) {
+              // SHIFT-TAB from the message should leave the message.
               onLeaveRef.current?.(messageId, 'shift tab');
             } else {
               const focusables = getFocusableChildren(body);
 
+              // TAB from the last form control should leave the message.
+              // TAB from a message without form control should leave the message.
               if (!event.shiftKey && (!focusables.length || target === focusables.at(-1))) {
                 onLeaveRef.current?.(messageId, 'tab');
               }
@@ -235,7 +279,7 @@ const ChatMessage = memo<{
     [bodyRef, focus, onLeaveRef]
   );
 
-  useImperativeHandle(ref, () => Object.freeze({ focus }), [focus]);
+  useImperativeHandle<ChatMessageAPI | undefined, ChatMessageAPI>(ref, () => Object.freeze({ focus }), [focus]);
 
   return (
     <article // Required: children of role="feed" must be role="article".
@@ -250,9 +294,7 @@ const ChatMessage = memo<{
       <h1
         className="chat-message__header"
         id={headerId}
-        onClick={handleHeaderClick}
-        // Windows Narrator quirks: All scan mode item must have `tabIndex`. Otherwise it may send the focus to `document.body`.
-        tabIndex={-1}
+        onClick={handleHeaderClick} // This onClick is for screen reader only.
       >
         {abstract}
       </h1>
@@ -289,7 +331,7 @@ function ChatHistory({
   const onLeaveRef = useRefFrom(onLeave);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const focus = useCallback<(focusInit: { which?: 'last message' | undefined }) => void>(
+  const focus = useCallback<ChatHistoryAPI['focus']>(
     ({ which }) => {
       const messageIdToFocus =
         (which !== 'last message' ? focusedMessageIdRef.current : undefined) ?? messagesRef.current?.at(-1)?.id;
@@ -392,13 +434,11 @@ function ChatHistory({
     [onLeaveRef]
   );
 
-  useImperativeHandle(ref, () => Object.freeze({ focus }), [focus]);
+  useImperativeHandle<ChatHistoryAPI | undefined, ChatHistoryAPI>(ref, () => Object.freeze({ focus }), [focus]);
 
   return (
     <section
-      className={classNames('chat-history', {
-        'chat-history--interact-mode-2': true
-      })}
+      className="chat-history"
       data-testid="chat history"
       ref={rootRef}
       role="feed" // Required: we are using role="feed/article" to represent the chat thread.
@@ -407,6 +447,7 @@ function ChatHistory({
       {messages.map(message => (
         <ChatMessage
           abstract={message.abstract}
+          key={message.id}
           messageId={message.id}
           onFocus={handleMessageFocus}
           onJumpToNext={handleMessageJumpToNext}
@@ -417,7 +458,12 @@ function ChatHistory({
           {message.children}
         </ChatMessage>
       ))}
-      <div className="focus-sentinel" onFocus={handleFocusSentinelFocus} role="none" tabIndex={0} />
+      <div
+        aria-hidden // Required: Compare to role="none/presentation", only aria-hidden will hide the element from reading.
+        className="focus-sentinel"
+        onFocus={handleFocusSentinelFocus}
+        tabIndex={0}
+      />
     </section>
   );
 }
@@ -428,9 +474,7 @@ const SendBox = memo<{
 }>(function SendBox({ onLeave, ref }) {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
-  const focus = useCallback(() => {
-    textAreaRef.current?.focus();
-  }, [textAreaRef]);
+  const focus = useCallback(() => textAreaRef.current?.focus(), [textAreaRef]);
 
   const onLeaveRef = useRefFrom(onLeave);
 

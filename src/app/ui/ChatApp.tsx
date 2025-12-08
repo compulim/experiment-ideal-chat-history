@@ -398,7 +398,9 @@ function ChatHistory({
   const handleFocusSentinelFocus = useCallback(() => {
     const { current: focusedMessageId } = focusedMessageIdRef;
 
-    focusedMessageId && messageAPIMapRef.current.get(focusedMessageId)?.current?.focus({ restoreFocus: true });
+    // Experimental: don't restore focus.
+    // focusedMessageId && messageAPIMapRef.current.get(focusedMessageId)?.current?.focus({ restoreFocus: true });
+    focusedMessageId && messageAPIMapRef.current.get(focusedMessageId)?.current?.focus({ restoreFocus: false });
   }, [focusedMessageIdRef, messageAPIMapRef]);
 
   // Remember which message is being focused, we need this for TAB-ing from outside (i.e. focus sentinels.)

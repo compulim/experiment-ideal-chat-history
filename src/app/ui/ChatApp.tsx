@@ -526,6 +526,7 @@ const ChatApp = memo<{ messages: readonly Message[] }>(function ChatApp({ messag
     },
     [sendBoxRef]
   );
+
   const handleSendBoxLeave = useCallback(
     (by: 'arrow up') => {
       if (by === 'arrow up') {

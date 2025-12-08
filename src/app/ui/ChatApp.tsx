@@ -192,7 +192,7 @@ const ChatMessage = memo<{
 
       // If the body is already focused, for example, the <input> inside the body is focused.
       // We should not send the focus back to the body as it would blur <input>.
-      if (!(activeElement === body || body?.contains(activeElement))) {
+      if (!(activeElement && body && (activeElement === body || body?.contains(activeElement)))) {
         focus({ restoreFocus: false });
       }
     },
@@ -445,7 +445,12 @@ function ChatHistory({
       ref={rootRef}
       role="feed" // Required: we are using role="feed/article" to represent the chat thread.
     >
-      <div className="focus-sentinel" onFocus={handleFocusSentinelFocus} role="none" tabIndex={0} />
+      <div
+        aria-hidden // Required: Compare to role="none/presentation", only aria-hidden will hide the element from reading.
+        className="focus-sentinel"
+        onFocus={handleFocusSentinelFocus}
+        tabIndex={0}
+      />
       {messages.map(message => (
         <ChatMessage
           abstract={message.abstract}

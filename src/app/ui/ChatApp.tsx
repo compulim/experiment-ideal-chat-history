@@ -28,6 +28,9 @@ import type { Message } from '../types';
 //       - The guess work around "why is the component blurred" is clearer with `onLeave()`.
 //    - Look at `onKeyDown[event.key === 'Tab']` to see how focus changes primarily. Use `onFocus()` as auxiliary.
 //       - `onKeyDown` is fired before `onFocus`, we can have more controls. Says, we can set `inert` attribute during `onKeyDown` to skip some elements.
+//    - UI focus are almost pure `:focus`
+//       - Zero DOM change for any focus/selection change, this makes the code much simpler and more performant.
+//       - The only UI state that is kept outside of `:focus` is the "focused message ID" (a ref state). Read "why roving tab index doesn't work for us" for more details.
 // - Techniques
 //    - Skip focusing on some content, `onKeyDown[event.key === 'Tab']` temporarily apply `inert` attribute and remove the attribute shortly afterwards (`requestAnimationFrame` works).
 //       - Don't apply `inert` permanently as it would disable mouse clicks on elements.

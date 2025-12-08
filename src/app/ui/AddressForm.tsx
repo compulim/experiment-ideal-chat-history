@@ -1,0 +1,75 @@
+import { AdaptiveCard, GlobalSettings, HostConfig } from 'adaptivecards';
+import { memo, useCallback, useEffect, useRef, type FormEventHandler } from 'react';
+
+const ADAPTIVE_CARD_JSON = {
+  type: 'AdaptiveCard',
+  version: '1.5',
+
+  body: [
+    {
+      type: 'Input.Text',
+      label: 'Street address'
+    },
+    {
+      type: 'Input.Text',
+      label: 'City'
+    },
+    {
+      type: 'Input.ChoiceSet',
+      label: 'State',
+      choices: [
+        { title: 'California', value: 'CA' },
+        { title: 'Oregon', value: 'OR' },
+        { title: 'Washington', value: 'WA' }
+      ],
+      style: 'compact'
+    }
+  ],
+  actions: [
+    {
+      type: 'Action.Submit',
+      title: 'Submit'
+    }
+  ]
+};
+
+export default memo(function AddressForm() {
+  const ref = useRef<HTMLFormElement>(null);
+
+  const handleSubmit = useCallback<FormEventHandler<HTMLFormElement>>(event => {
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const adaptiveCard = new AdaptiveCard();
+
+    adaptiveCard.hostConfig = new HostConfig({ containerStyles: { default: { backgroundColor: '#f7f7f7' } } });
+    adaptiveCard.onExecuteAction = () => {
+      ref.current?.closest('form')?.requestSubmit();
+    };
+
+    adaptiveCard.parse(ADAPTIVE_CARD_JSON);
+
+    GlobalSettings.setTabIndexAtCardRoot = false;
+
+    const element = adaptiveCard.render();
+
+    if (element) {
+      const textInput = element.querySelector('.ac-textInput') as HTMLElement | undefined;
+
+      if (textInput) {
+        textInput.dataset['testid'] = 'street address textbox';
+      }
+
+      const pushButton = element.querySelector('.ac-pushButton') as HTMLElement | undefined;
+
+      if (pushButton) {
+        pushButton.dataset['testid'] = 'address form submit button';
+      }
+
+      ref.current?.appendChild(element);
+    }
+  }, [ref]);
+
+  return <form data-testid="address form" ref={ref} onSubmit={handleSubmit} />;
+});

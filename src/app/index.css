@@ -32,11 +32,7 @@ body {
   width: 360px;
 }
 
-.chat-history.chat-history--interact-mode-1 {
-  background-color: rgba(0, 255, 0, 0.1);
-}
-
-.chat-history.chat-history--interact-mode-2 {
+.chat-history {
   background-color: rgba(255, 0, 0, 0.1);
 }
 
@@ -119,8 +115,7 @@ button:focus {
   width: 1px;
 }
 
-.ac-adaptiveCard {
+.attachment {
   border: solid 1px #f0f0f0;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
   margin-top: 0.5em;
 }

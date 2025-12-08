@@ -31,6 +31,7 @@ import type { Message } from '../types';
 //    - UI focus are almost pure `:focus`
 //       - Zero DOM change for any focus/selection change, this makes the code much simpler and more performant.
 //       - The only UI state that is kept outside of `:focus` is the "focused message ID" (a ref state). Read "why roving tab index doesn't work for us" for more details.
+//       - CSS is done by `.chat-history:focus-within:has(.chat-message__body:focus)`.
 // - Techniques
 //    - Skip focusing on some content, `onKeyDown[event.key === 'Tab']` temporarily apply `inert` attribute and remove the attribute shortly afterwards (`requestAnimationFrame` works).
 //       - Don't apply `inert` permanently as it would disable mouse clicks on elements.

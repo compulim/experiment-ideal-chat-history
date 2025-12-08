@@ -32,6 +32,7 @@ import type { Message } from '../types';
 //       - Zero DOM change for any focus/selection change, this makes the code much simpler and more performant.
 //       - The only UI state that is kept outside of `:focus` is the "focused message ID" (a ref state). Read "why roving tab index doesn't work for us" for more details.
 //       - CSS is done by `.chat-history:focus-within:has(.chat-message__body:focus)`.
+//       - `:focus` is strictly singular and enforced by the browser, it is impossible to focus on 2 messages at the same time.
 // - Techniques
 //    - Skip focusing on some content, `onKeyDown[event.key === 'Tab']` temporarily apply `inert` attribute and remove the attribute shortly afterwards (`requestAnimationFrame` works).
 //       - Don't apply `inert` permanently as it would disable mouse clicks on elements.
@@ -42,6 +43,7 @@ import type { Message } from '../types';
 //       - We borrowed the concept of roving tab index but using focus sentinels to restore the focus. Focus sentinels requires focus redirection, which is expensive in UX sense.
 //    - Capture events at the root element of message.
 //       - This will centralize the event-driven logic. As a result, simplify some code and makes things easier to debug.
+//    - When focused in chat history, makes unselected message transparent, so the end-user has an easier time to see what is selected.
 
 // Notes:
 // 1. We cannot use `inert` because it would block mouse clicks as well as TAB.
